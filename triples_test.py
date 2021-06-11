@@ -7,48 +7,64 @@ def share(secret, n):
         shares[1] = shares[1] ^ shares[i]
     return shares
 
+def reconstruct(shares, n):
+    secret = shares[1]
+    for i in range(2, n+1):
+        secret = secret ^ shares[i]
+    return secret
+
 def generate_triple(n):
     _a = random.getrandbits(1)
     _b = random.getrandbits(1)
     _c = _a & _b
     return list(zip(share(_a, n), share(_b, n), share(_c, n)))
 
-def stage_one(x):
-    x1 = random.getrandbits(1)
-    x2 = x ^ x1
-    return x1, x2
+def stage_two(xi, yi, ai, bi):
+    di = xi ^ ai
+    ei = yi ^ bi
+    return di, ei
 
-def stage_two(x1, y1, a1, b1):
-    d1 = x1 ^ a1
-    e1 = y1 ^ b1
-    return d1, e1
+def stage_three(xi, yi, ds, es, ci, i1):
+    d = reconstruct(ds, n)
+    e = reconstruct(es, n)
+    zi = ci ^ (xi & e) ^ (yi & d)
+    if i1:
+        zi = zi ^ (d & e)
+    return zi
 
-def stage_three(x1, y1, d1, d2, e1, e2, c1, p1):
-    d = d1 ^ d2
-    e = e1 ^ e2
-    z1 = c1 ^ (x1 & e) ^ (y1 & d)
-    if p1:
-        z1 = z1 ^ (d & e)
-    return z1
+def emulate_and(xs, ys, abc, n):
+    (as_, bs, cs) = list(zip(*abc))
 
-def emulate_and(x, y, abc):
-    ((a1, b1, c1), (a2, b2, c2)) = abc[1:]
+    ds = [None]*(n+1)
+    es = [None]*(n+1)
+    for i in range(1, n+1):
+        ds[i], es[i] = stage_two(xs[i], ys[i], as_[i], bs[i])
 
-    x1, x2 = stage_one(x)
-    y1, y2 = stage_one(y)
+    zs = [None]*(n+1)
+    for i in range(1, n+1):
+        zs[i] = stage_three(xs[i], ys[i], ds, es, cs[i], i == 1)
 
-    d1, e1 = stage_two(x1, y1, a1, b1)
-    d2, e2 = stage_two(x2, y2, a2, b2)
+    views = [None]*(n+1)
+    for i in range(1, n+1):
+        views[i] = [as_[i], bs[i], cs[i], xs[i], ys[i]] + ds[1:] + es[1:]
 
-    z1 = stage_three(x1, y1, d1, d2, e1, e2, c1, True)
-    z2 = stage_three(x2, y2, d1, d2, e1, e2, c2, False)
+    return zs, views
 
-    z = z1 ^ z2
-
-    assert(x & y == z)
-
+n = 5
 for _ in range(128):
     x = random.getrandbits(1)
     y = random.getrandbits(1)
-    abc = generate_triple(2)
-    emulate_and(x, y, abc)
+
+    xs = share(x, n)
+    ys = share(y, n)
+
+    abc = generate_triple(n)
+
+    zs, views = emulate_and(xs, ys, abc, n)
+
+    z = reconstruct(zs, n)
+
+    assert(x & y == z)
+
+# from bitlist import bitlist
+# print([bitlist(view).hex() for view in random.sample(views, k=n-1)])
