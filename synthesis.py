@@ -35,29 +35,25 @@ def bit_optimize(o, v, *args):
 
 bit.hook_operation(bit_optimize)
 
-in_path = "add8.txt" # sys.argv[1]
-out_path = "nizk_add8.txt" # sys.argv[2]
+in_path = "./add8.txt" # sys.argv[1]
+in_name = in_path.split("/")[-1]
+out_name = "nizk_"+in_path.split("/")[-1]
+out_path = ''.join(in_path.split("/")[:-1])+"/"+out_name # sys.argv[2]
 plain_circuit = bristol_fashion(open(in_path).read())
 proof_circuit = synthesize(mpc_emulate(plain_circuit)).circuit
 
 in_int8s = [3, 4]
 in_bits = [b for i8 in in_int8s for b in bits.from_byte(i8, lambda b: b)]
-xs, ys = in_bits[0:8], in_bits[8:16]
 
-name = in_path.split("/")[-1]
-print("Synthesized `" + name + "` with " + str(len(proof_circuit.gate)) + " gates:")
+print("Synthesized `" + out_name + "` with " + str(len(proof_circuit.gate)) + " gates:")
 print(' * operation counts: ', {
     o.name(): proof_circuit.count(lambda g: g.operation == o)
     for o in [op.not_, op.and_, op.xor_, op.or_, op.nand_, op.nif_, op.id_, op.xnor_, op.nimp_]
 })
-# feedback(
-#     name, "* data structure evaluated on input",
-#     proof_circuit.evaluate(input_test), "output_target"
-# )
+
 to_bin = lambda xs : ''.join(map(str, list(xs)))
-print("Circuit has " + str(len(proof_circuit.gate)) + " gates; output check f(" + to_bin(xs) + ", " + to_bin(ys) + "):",
-    to_bin(reversed(bitlist(proof_circuit.evaluate(xs, ys)).bits))
-)
+print(" * circuit to evaluate on input: ", to_bin(in_bits))
+print(" * evaluated circuit got output: ", to_bin(reversed(bitlist(proof_circuit.evaluate(in_bits)).bits)))
 
 with open(out_path, 'w') as circuit_file:
     # Build and emit the Bristol Fashion circuit file.
