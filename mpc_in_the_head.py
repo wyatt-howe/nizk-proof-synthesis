@@ -3,44 +3,118 @@ from parts import parts
 from bitlist import bitlist
 from circuit import op
 from circuitry import *
+from secrets import randbits
 
-# def add(xs: bits(8), ys: bits(8)) -> bits(8):
-#     """Addition of bit vectors."""
-#     (xs, ys) = (list(reversed(xs)), list(reversed(ys)))
-#     (x0, xt, y0, yt) = (xs[0], xs[1:], ys[0], ys[1:])
-#     (s, c) = (x0 ^ y0, x0 & y0)
-#     def combine(zs_, xy):
-#         c = zs_.pop()
-#         (_xor, _and) = (xy[0] ^ xy[1], xy[0] & xy[1])
-#         return zs_ + [_xor ^ c, _and | (_xor & c)]
-#     zs = [s] + list(reduce(combine, zip(xt, yt), [c]))[:-1]
-#     return bits(list(reversed(zs)))
+#
+# MPC primitives
+#
 
-def mpc_emulate(circ):
-    def emulate(in_bits: bits(circ.wire_in_count)) -> bits(circ.wire_out_count):
-        RAM = [None]*circ.wire_count  # [None]*sum(circ.gate_count)
-        RAM[0:circ.wire_in_count] = in_bits
+def share(secret, n):
+    shares = [None, secret] + [None]*(n-1)
+    for i in range(2, n+1):
+        shares[i] = randbits(1)
+        shares[1] = shares[1] ^ shares[i]
+    return shares
+
+def reconstruct(shares, n):
+    secret = shares[1]
+    for i in range(2, n+1):
+        secret = secret ^ shares[i]
+    return secret
+
+def generate_triple(n):
+    _a = randbits(1)
+    _b = randbits(1)
+    _c = _a & _b
+    return list(zip(share(_a, n), share(_b, n), share(_c, n)))
+
+#
+# Emulated gates
+#
+
+def emulate_and(xs, ys, abc, n):
+    def stage_one(xi, yi, ai, bi):
+        di = xi ^ ai
+        ei = yi ^ bi
+        return di, ei
+
+    def stage_two(xi, yi, ds, es, ci, i1):
+        d = reconstruct(ds, n)
+        e = reconstruct(es, n)
+        zi = ci ^ (xi & e) ^ (yi & d)
+        if i1:
+            zi = zi ^ (d & e)
+        return zi
+
+    (as_, bs, cs) = list(map(bits, zip(*abc)))
+
+    ds = [None]*(n+1)
+    es = [None]*(n+1)
+    for i in range(1, n+1):
+        ds[i], es[i] = stage_one(xs[i], ys[i], as_[i], bs[i])
+
+    zs = [None]*(n+1)
+    for i in range(1, n+1):
+        zs[i] = stage_two(xs[i], ys[i], ds, es, cs[i], i == 1)
+
+    views = [None]*(n+1)
+    for i in range(1, n+1):
+        views[i] = [as_[i], bs[i], cs[i], xs[i], ys[i]] + ds[1:] + es[1:]
+
+    return zs, views
+
+def emulate_xor(xs, ys, n):
+    zs = [None]*(n+1)
+    for i in range(1, n+1):
+        zs[i] = xs[i] ^ ys[i]
+    return zs, []
+
+def emulate_or(xs, ys, abc, n):
+    xys, views = emulate_and(xs, ys, abc, n)
+    ws, _views = emulate_xor(ys, xys, n)
+    zs, _views = emulate_xor(xs, ws, n)
+    return zs, views
+
+def emulate_not(xs, ys, n):
+    zs = [None]*(n+1)
+    for i in range(1, n+1):
+        zs[i] = ~xs[i]
+    return zs, []
+
+def emulate_id(xs, _n):
+    return xs, []
+
+#
+# Circuit emulation
+#
+
+def mpc_emulate(circ, n):
+    share_n = lambda x : share(x, n)
+    reconstruct_n = lambda xs : reconstruct(xs, n)
+
+    proof_size = 0#circ.gate_count *
+
+    def emulate(in_bits: bits(circ.wire_in_count)) -> bits(circ.wire_out_count + proof_size):
+        proof = []
+        RAM = [[None]*(n+1)]*circ.wire_count
+        RAM[0:circ.wire_in_count] = list(map(share_n, in_bits))
 
         for gate in circ.gate:
             in1, in2 = gate.wire_in_index
             out = gate.wire_out_index[0]
             if gate.operation == op.and_:
-                RAM[out] = RAM[in1] & RAM[in2]
+                RAM[out], views = emulate_and(RAM[in1], RAM[in2], generate_triple(n), n)
             if gate.operation == op.or_:
-                RAM[out] = RAM[in1] | RAM[in2]
+                RAM[out], views = emulate_or(RAM[in1], RAM[in2], generate_triple(n), n)
             if gate.operation == op.xor_:
-                RAM[out] = ~(RAM[in1] ^ RAM[in2])  # Modified to demonstrate emulation
+                RAM[out], views = emulate_xor(RAM[in1], RAM[in2], n)
             if gate.operation == op.not_:
-                RAM[out] = ~RAM[in1]
+                RAM[out], views = emulate_not(RAM[in1], n)
             if gate.operation == op.id_:
-                RAM[out] = RAM[in1]
+                RAM[out], views = emulate_id(RAM[in1], n)
+            proof.extend(views)
 
-        return bits(RAM[-circ.wire_out_count:])
+        print(n, len(proof))
+        return bits(list(map(reconstruct_n, RAM[-circ.wire_out_count:])))
 
-    # return sha256
     return emulate
-
-
-
-
-
