@@ -3,4 +3,4 @@ Python tool to construct circuits which output a non-interactive zero-knowledge 
 
 TODO:
  - Implement LowMC
- - Implement MPC using triples
+ - Accept triplets as joint input (from both parties not just one)
