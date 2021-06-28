@@ -4,6 +4,7 @@ from bitlist import bitlist
 from circuit import op
 from circuitry import *
 from secrets import randbits
+from LowMC import encrypt, xor_block
 
 #
 # MPC primitives
@@ -95,26 +96,34 @@ def mpc_emulate(circ, n):
     proof_size = 0#circ.gate_count *
 
     def emulate(in_bits: bits(circ.wire_in_count)) -> bits(circ.wire_out_count + proof_size):
-        proof = []
-        RAM = [[None]*(n+1)]*circ.wire_count
-        RAM[0:circ.wire_in_count] = list(map(share_n, in_bits))
+        all_views = []
+        for k in range(80):
+            pass
+            choicen_indices = [0]*256
+            RAM = [[None]*(n+1)]*circ.wire_count
+            RAM[0:circ.wire_in_count] = list(map(share_n, in_bits))
 
-        for gate in circ.gate:
-            in1, in2 = gate.wire_in_index
-            out = gate.wire_out_index[0]
-            if gate.operation == op.and_:
-                RAM[out], views = emulate_and(RAM[in1], RAM[in2], generate_triple(n), n)
-            if gate.operation == op.or_:
-                RAM[out], views = emulate_or(RAM[in1], RAM[in2], generate_triple(n), n)
-            if gate.operation == op.xor_:
-                RAM[out], views = emulate_xor(RAM[in1], RAM[in2], n)
-            if gate.operation == op.not_:
-                RAM[out], views = emulate_not(RAM[in1], n)
-            if gate.operation == op.id_:
-                RAM[out], views = emulate_id(RAM[in1], n)
-            proof.extend(views)
+            for gate in circ.gate:
+                in1, in2 = gate.wire_in_index
+                out = gate.wire_out_index[0]
+                if gate.operation == op.and_:
+                    RAM[out], views = emulate_and(RAM[in1], RAM[in2], generate_triple(n), n)
+                if gate.operation == op.or_:
+                    RAM[out], views = emulate_or(RAM[in1], RAM[in2], generate_triple(n), n)
+                if gate.operation == op.xor_:
+                    RAM[out], views = emulate_xor(RAM[in1], RAM[in2], n)
+                if gate.operation == op.not_:
+                    RAM[out], views = emulate_not(RAM[in1], n)
+                if gate.operation == op.id_:
+                    RAM[out], views = emulate_id(RAM[in1], n)
+                all_views.extend(views)
 
-        print(n, len(proof))
-        return bits(list(map(reconstruct_n, RAM[-circ.wire_out_count:])))
+                # Update random bits to use later in a Fiat-Shamir transformation
+                choicen_indices = xor_block(choicen_indices, encrypt(views))
+
+        # Cut and choose views for the proof
+        chosen_views = [views[2*i+j] for i, j in zip(choicen_indices[:80], choicen_indices[80:])]
+
+        return bits(list(map(reconstruct_n, RAM[-circ.wire_out_count:])) + list(chosen_views))
 
     return emulate

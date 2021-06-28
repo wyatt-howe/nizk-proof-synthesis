@@ -16,9 +16,9 @@ def xor_block(block1, block2):
 #
 
 numofboxes = 49  # Number of Sboxes
-blocksize = 64  # Block size in bits
-keysize = 20  # Key size in bits
-rounds = 1  # Number of rounds
+blocksize = 256  # Block size in bits
+keysize = 80  # Key size in bits
+rounds = 8  # Number of rounds
 
 identitysize = blocksize - (3 * numofboxes)  # Size of the identity part in the Sbox layer
 
