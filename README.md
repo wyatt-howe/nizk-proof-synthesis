@@ -13,7 +13,7 @@ If there were a way to link an execution of one protocol, semi-honest or otherwi
 
 ### Proofs of Arithmetic Circuits
 
-Beaver triples, garbled circuits, and MPC-in-the-head in general all support operating in $GF(n)$ rather than $GF(2)$.  We would need to write a synthesis tool for arithmetic circuits, and adapt JIGG for arithmetic circuits as well.
+Beaver triples, garbled circuits, and MPC-in-the-head in general all support operating in _GF(n)_ rather than _GF(2)_.  We would need to write a synthesis tool for arithmetic circuits, and adapt JIGG for arithmetic circuits as well.
 
 ### Privacy Upon Collusion
 
