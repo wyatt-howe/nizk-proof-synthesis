@@ -1,7 +1,4 @@
-from functools import reduce
-from parts import parts
-from bitlist import bitlist
-from circuit import op
+from circuit import *
 from circuitry import *
 from secrets import randbits
 from LowMC import encrypt, xor_block
@@ -23,9 +20,9 @@ def reconstruct(shares, n):
         secret = secret ^ shares[i]
     return secret
 
-def generate_triple(n):
-    _a = randbits(1)
-    _b = randbits(1)
+def generate_triple(n, _a=None, _b=None):
+    _a = randbits(1) if not _a else _a
+    _b = randbits(1) if not _b else _b
     _c = _a & _b
     return list(zip(share(_a, n), share(_b, n), share(_c, n)))
 
@@ -76,7 +73,7 @@ def emulate_or(xs, ys, abc, n):
     zs, _views = emulate_xor(xs, ws, n)
     return zs, views
 
-def emulate_not(xs, ys, n):
+def emulate_not(xs, n):
     zs = [None]*(n+1)
     for i in range(1, n+1):
         zs[i] = ~xs[i]
@@ -88,6 +85,15 @@ def emulate_id(xs, _n):
 #
 # Circuit emulation
 #
+
+def garbled_size(circ):
+    gates = circuit()
+    gates.gate = circ.gate
+    return gates.count(
+        lambda g: \
+            g.operation == op.and_ \
+            or g.operation == op.or_
+    )
 
 def mpc_emulate(circ, n):
     share_n = lambda x : share(x, n)

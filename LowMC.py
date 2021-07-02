@@ -16,9 +16,9 @@ def xor_block(block1, block2):
 #
 
 numofboxes = 49  # Number of Sboxes
-blocksize = 256  # Block size in bits
-keysize = 80  # Key size in bits
-rounds = 8  # Number of rounds
+blocksize = 128  # Block size in bits
+keysize = 40  # Key size in bits
+rounds = 1  # Number of rounds
 
 identitysize = blocksize - (3 * numofboxes)  # Size of the identity part in the Sbox layer
 
@@ -31,8 +31,8 @@ keyblock = lambda : bitset(keysize, 0)  # Stores states
 #
 
 # The Sbox and its inverse
-Sbox = [0x00, 0x01, 0x03, 0x06, 0x07, 0x04, 0x05, 0x02]  # vector<unsigned>
-invSbox = [0x00, 0x01, 0x07, 0x02, 0x05, 0x06, 0x03, 0x04]  # vector<unsigned>
+Sbox = [[0,0,0], [0,0,1], [0,1,1], [1,1,0], [1,1,1], [1,0,0], [1,0,1], [0,1,0]]  # vector<unsigned>
+invSbox = [[0,0,0], [0,0,1], [1,1,1], [0,1,0], [1,0,1], [1,1,0], [0,1,1], [1,0,0]]  # vector<unsigned>
 
 LinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the binary matrices for each round
 invLinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the inverses of LinMatrices
@@ -42,11 +42,23 @@ KeyMatrices = [[keyblock() for _ in range(blocksize)] for _ in range(rounds+1)] 
 roundkeys = [keyblock() for _ in range(rounds+1)]  # Stores the round keys
 state = None  # Keeps the 80 bit LSFR state
 
+default_key = [
+    1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
+    0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
+    1, 0, 0, 1, 0, 0, 1, 0, 0, 1
+]
+key = default_key
+
 #
 # LowMC functions
 #
 
-def encrypt(message: block):  # -> block
+def encrypt(message: block):#, k=None: keyblock):  # -> block
+    # if not k is None:
+    #     global key
+    #     key = k
+    #     keyschedule()
     c = xor_block(message, roundkeys[0])
     for r in range(rounds):
         c = Substitution(c)
@@ -69,7 +81,8 @@ def decrypt(message: block):  # -> block
     return c
 
 
-def set_key (k: keyblock):  # -> void
+def set_key(k: keyblock):  # -> void
+    global key
     key = k
     keyschedule()
 
@@ -90,13 +103,38 @@ def Substitution(message: block):  # -> block
         temp = [0, 0, 0] + temp[:-3]
         j = 3*(numofboxes-i-1)
         idx_bits = (message[j:] + [0 for _ in range(j)])[0:3]
-        idx = idx_bits[0] + 2*idx_bits[1] + 4*idx_bits[2]
-        sb = Sbox[idx]
+
+        a, b, c = idx_bits[0:3]
+        inv = lambda t : t ^ (t | t)
+        eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
+        ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
+        add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
+
+        sb = add(
+            *add(
+                *add(
+                    *ife(*Sbox[0], eqt(0,0,0)),
+                    *ife(*Sbox[1], eqt(0,0,1))
+                ),
+                *add(
+                    *ife(*Sbox[2], eqt(0,1,0)),
+                    *ife(*Sbox[3], eqt(0,1,1))
+                )
+            ),
+            *add(
+                *add(
+                    *ife(*Sbox[4], eqt(1,0,0)),
+                    *ife(*Sbox[5], eqt(1,0,1))
+                ),
+                *add(
+                    *ife(*Sbox[6], eqt(1,1,0)),
+                    *ife(*Sbox[7], eqt(1,1,1))
+                )
+            )
+        )
+
         sblock = block()
-        sblock[0] = sb % 2
-        sblock[1] = (sb//2) % 2
-        sblock[2] = (sb//4) % 2
-        # temp = [sb ^ tb for tb in temp]
+        sblock[0:3] = sb[0:3]
         temp = xor_block(temp, sblock)
 
     return temp
@@ -114,13 +152,38 @@ def invSubstitution(message: block):  # -> block
         temp = [0, 0, 0] + temp[:-3]
         j = 3*(numofboxes-i-1)
         idx_bits = (message[j:] + [0 for _ in range(j)])[0:3]
-        idx = idx_bits[0] + 2*idx_bits[1] + 4*idx_bits[2]
-        sb = Sbox[idx]
+
+        a, b, c = idx_bits[0:3]
+        inv = lambda t : t ^ (t | t)
+        eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
+        ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
+        add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
+
+        sb = add(
+            *add(
+                *add(
+                    *ife(*invSbox[0], eqt(0,0,0)),
+                    *ife(*invSbox[1], eqt(0,0,1))
+                ),
+                *add(
+                    *ife(*invSbox[2], eqt(0,1,0)),
+                    *ife(*invSbox[3], eqt(0,1,1))
+                )
+            ),
+            *add(
+                *add(
+                    *ife(*invSbox[4], eqt(1,0,0)),
+                    *ife(*invSbox[5], eqt(1,0,1))
+                ),
+                *add(
+                    *ife(*invSbox[6], eqt(1,1,0)),
+                    *ife(*invSbox[7], eqt(1,1,1))
+                )
+            )
+        )
+
         sblock = block()
-        sblock[0] = sb % 2
-        sblock[1] = (sb//2) % 2
-        sblock[2] = (sb//4) % 2
-        # temp = [sb ^ tb for tb in temp]
+        sblock[0:3] = sb[0:3]
         temp = xor_block(temp, sblock)
 
     return temp
@@ -129,14 +192,18 @@ def invSubstitution(message: block):  # -> block
 def MultiplyWithGF2Matrix(matrix, message):  # -> block
     temp = block()
     for i in range(blocksize):
-        temp[i] = sum([mb & b for mb, b in zip(message, matrix[i])]) % 2
+        temp[i] = 0
+        for mb, b in zip(message, matrix[i]):
+            temp[i] = temp[i] ^ (mb & b)
     return temp
 
 
 def MultiplyWithGF2Matrix_Key(matrix, k):  # -> block
     temp = block()
     for i in range(blocksize):
-        temp[i] = sum([kb & b for kb, b in zip(k, matrix[i])]) % 2
+        temp[i] = 0
+        for kb, b in zip(k, matrix[i]):
+            temp[i] = temp[i] ^ (kb & b)
     return temp
 
 
@@ -374,26 +441,42 @@ def getrandbit():  # -> bool
     return tmp
 
 
+instantiate_LowMC()
+keyschedule()
+
+
 #
 # Setup and test
 #
 
+# if __name__ == '__main__':
+#     key = keyblock()
+#     key[0:1] = [1]
+#     instantiate_LowMC()
+#     keyschedule()
+#
+#     m = block()
+#     m[0:16] = [1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+#     print("Plaintext:")
+#     print(''.join(map(str, reversed(m))))
+#
+#     m = encrypt(m)
+#     print("Ciphertext:")
+#     print(''.join(map(str, reversed(m))))
+#
+#     m = decrypt(m)
+#     print("Encryption followed by decryption of plaintext:")
+#     print(''.join(map(str, reversed(m))))
+
 if __name__ == '__main__':
-    key = keyblock()
-    key[0:1] = [1]
-    instantiate_LowMC()
-    keyschedule()
-
-    m = block()
-    m[0:16] = [1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-    print("Plaintext:")
-    print(''.join(map(str, reversed(m))))
-
-    m = encrypt(m)
-    print("Ciphertext:")
-    print(''.join(map(str, reversed(m))))
-
-    m = decrypt(m)
-    print("Encryption followed by decryption of plaintext:")
-    print(''.join(map(str, reversed(m))))
-
+    m = [
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    ]
+    print(encrypt(m, k))
