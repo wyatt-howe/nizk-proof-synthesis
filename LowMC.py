@@ -15,12 +15,12 @@ def xor_block(block1, block2):
 # LowMC public data
 #
 
-numofboxes = 49  # Number of Sboxes
+numofboxes = 49  # Number of S-boxes
 blocksize = 128  # Block size in bits
 keysize = 40  # Key size in bits
 rounds = 1  # Number of rounds
 
-identitysize = blocksize - (3 * numofboxes)  # Size of the identity part in the Sbox layer
+identitysize = blocksize - (3 * numofboxes)  # Size of the identity part in the S-box layer
 
 block = lambda : bitset(blocksize, 0)  # Stores messages
 keyblock = lambda : bitset(keysize, 0)  # Stores states
@@ -30,9 +30,9 @@ keyblock = lambda : bitset(keysize, 0)  # Stores states
 # LowMC private data members
 #
 
-# The Sbox and its inverse
-Sbox = [[0,0,0], [0,0,1], [0,1,1], [1,1,0], [1,1,1], [1,0,0], [1,0,1], [0,1,0]]  # vector<unsigned>
-invSbox = [[0,0,0], [0,0,1], [1,1,1], [0,1,0], [1,0,1], [1,1,0], [0,1,1], [1,0,0]]  # vector<unsigned>
+# The S-box and its inverse (little-endian)
+Sbox = [[0,0,0], [1,0,0], [1,1,0], [0,1,1], [1,1,1], [0,0,1], [1,0,1], [0,1,0]]  # vector<unsigned>
+invSbox = [[0,0,0], [1,0,0], [1,1,1], [0,1,0], [1,0,1], [0,1,1], [1,1,0], [0,0,1]]  # vector<unsigned>
 
 LinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the binary matrices for each round
 invLinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the inverses of LinMatrices
@@ -42,12 +42,12 @@ KeyMatrices = [[keyblock() for _ in range(blocksize)] for _ in range(rounds+1)] 
 roundkeys = [keyblock() for _ in range(rounds+1)]  # Stores the round keys
 state = None  # Keeps the 80 bit LSFR state
 
-default_key = [
+default_key = list(reversed([
     1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
     0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
     0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
     1, 0, 0, 1, 0, 0, 1, 0, 0, 1
-]
+]))
 key = default_key
 
 #
@@ -63,22 +63,22 @@ def encrypt(message: block):#, k=None: keyblock):  # -> block
     for r in range(rounds):
         c = Substitution(c)
         c = MultiplyWithGF2Matrix(LinMatrices[r], c)
-        c = xor_block(message, roundconstants[r])
-        c = xor_block(message, roundkeys[r+1])
+        c = xor_block(c, roundconstants[r])
+        c = xor_block(c, roundkeys[r+1])
 
     return c
 
 
-def decrypt(message: block):  # -> block
-    c = message
+def decrypt(ciphertext: block):  # -> block
+    m = ciphertext
     for r in reversed(range(rounds)):
-        c = xor_block(message, roundkeys[r+1])
-        c = xor_block(message, roundconstants[r])
-        c = MultiplyWithGF2Matrix(invLinMatrices[r], c)
-        c = invSubstitution(c)
-    c = xor_block(message, roundkeys[0])
+        m = xor_block(m, roundkeys[r+1])
+        m = xor_block(m, roundconstants[r])
+        m = MultiplyWithGF2Matrix(invLinMatrices[r], m)
+        m = invSubstitution(m)
+    m = xor_block(m, roundkeys[0])
 
-    return c
+    return m
 
 
 def set_key(k: keyblock):  # -> void
@@ -102,10 +102,10 @@ def Substitution(message: block):  # -> block
     for i in range(numofboxes):
         temp = [0, 0, 0] + temp[:-3]
         j = 3*(numofboxes-i-1)
-        idx_bits = (message[j:] + [0 for _ in range(j)])[0:3]
+        idx_bits = (message[j:] + [0 for _ in range(j)])
 
         a, b, c = idx_bits[0:3]
-        inv = lambda t : t ^ (t | t)
+        inv = lambda t : t^1  # safe NOT (instead of using ~) for when testing manually
         eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
         ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
         add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
@@ -114,20 +114,20 @@ def Substitution(message: block):  # -> block
             *add(
                 *add(
                     *ife(*Sbox[0], eqt(0,0,0)),
-                    *ife(*Sbox[1], eqt(0,0,1))
+                    *ife(*Sbox[1], eqt(1,0,0))  # big-endian
                 ),
                 *add(
                     *ife(*Sbox[2], eqt(0,1,0)),
-                    *ife(*Sbox[3], eqt(0,1,1))
+                    *ife(*Sbox[3], eqt(1,1,0))
                 )
             ),
             *add(
                 *add(
-                    *ife(*Sbox[4], eqt(1,0,0)),
+                    *ife(*Sbox[4], eqt(0,0,1)),
                     *ife(*Sbox[5], eqt(1,0,1))
                 ),
                 *add(
-                    *ife(*Sbox[6], eqt(1,1,0)),
+                    *ife(*Sbox[6], eqt(0,1,1)),
                     *ife(*Sbox[7], eqt(1,1,1))
                 )
             )
@@ -154,7 +154,7 @@ def invSubstitution(message: block):  # -> block
         idx_bits = (message[j:] + [0 for _ in range(j)])[0:3]
 
         a, b, c = idx_bits[0:3]
-        inv = lambda t : t ^ (t | t)
+        inv = lambda t : t^1  # safe NOT (instead of using ~) for when testing manually
         eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
         ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
         add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
@@ -163,20 +163,20 @@ def invSubstitution(message: block):  # -> block
             *add(
                 *add(
                     *ife(*invSbox[0], eqt(0,0,0)),
-                    *ife(*invSbox[1], eqt(0,0,1))
+                    *ife(*invSbox[1], eqt(1,0,0))  # big-endian
                 ),
                 *add(
                     *ife(*invSbox[2], eqt(0,1,0)),
-                    *ife(*invSbox[3], eqt(0,1,1))
+                    *ife(*invSbox[3], eqt(1,1,0))
                 )
             ),
             *add(
                 *add(
-                    *ife(*invSbox[4], eqt(1,0,0)),
+                    *ife(*invSbox[4], eqt(0,0,1)),
                     *ife(*invSbox[5], eqt(1,0,1))
                 ),
                 *add(
-                    *ife(*invSbox[6], eqt(1,1,0)),
+                    *ife(*invSbox[6], eqt(0,1,1)),
                     *ife(*invSbox[7], eqt(1,1,1))
                 )
             )
@@ -449,34 +449,26 @@ keyschedule()
 # Setup and test
 #
 
-# if __name__ == '__main__':
-#     key = keyblock()
-#     key[0:1] = [1]
-#     instantiate_LowMC()
-#     keyschedule()
-#
-#     m = block()
-#     m[0:16] = [1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-#     print("Plaintext:")
-#     print(''.join(map(str, reversed(m))))
-#
-#     m = encrypt(m)
-#     print("Ciphertext:")
-#     print(''.join(map(str, reversed(m))))
-#
-#     m = decrypt(m)
-#     print("Encryption followed by decryption of plaintext:")
-#     print(''.join(map(str, reversed(m))))
-
 if __name__ == '__main__':
-    m = [
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    ]
-    print(encrypt(m, k))
+    pt = list(reversed([
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        1, 0, 0, 1, 0, 0, 1, 0,
+        0, 1, 0, 1, 1, 0, 1, 1,
+        0, 1, 1, 0, 0, 1, 1, 0,
+        1, 1, 0, 1, 1, 0, 1, 0,
+        0, 1, 0, 0, 1, 0, 0, 1
+    ]))
+
+    print("Plaintext:")
+    print(''.join(map(str, reversed(pt))))
+
+    ct = encrypt(pt)
+
+    print("Ciphertext:")
+    print(''.join(map(str, reversed(ct))))
+
+    pt = decrypt(ct)
+    print("Encryption followed by decryption of plaintext:")
+    print(''.join(map(str, reversed(pt))))
