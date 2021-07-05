@@ -33,14 +33,17 @@ def bit_optimize(o, v, *args):
 
 bit.hook_operation(bit_optimize)
 
-in_path = "./avg32.txt" # sys.argv[1]
+in_path = "./std32.txt" # sys.argv[1]
 in_name = in_path.split("/")[-1]
 out_name = "nizk_"+in_path.split("/")[-1]
 out_path = ''.join(in_path.split("/")[:-1])+"/"+out_name # sys.argv[2]
 plain_circuit = bristol_fashion(open(in_path).read())
 proof_circuit = synthesize(mpc_emulate(plain_circuit, 3)).circuit
 
-in_int8s = [3, 4, 3, 4] + [3, 4, 3, 4]# + [8, 4, 3, 4, 3, 4, 3, 4]
+in_int8s = [3, 4, 3, 4] + \
+           [8, 4, 3, 4] + \
+           [6, 4, 3, 4] + \
+           [5, 4, 3, 4]
 in_bits = [b for i8 in in_int8s for b in bits.from_byte(i8, lambda b: b)]
 
 print("Synthesized `" + out_name + "` with " + str(len(proof_circuit.gate)) + " gates:")
