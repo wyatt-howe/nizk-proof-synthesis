@@ -1,6 +1,8 @@
 # Python port of LowMC.cpp found at
 # https://github.com/LowMC/lowmc/blob/master/LowMC.cpp
 
+from circuitry import *
+
 #
 # Python polyfills for C++ std::bitset
 #
@@ -22,32 +24,42 @@ rounds = 1  # Number of rounds
 
 identitysize = blocksize - (3 * numofboxes)  # Size of the identity part in the S-box layer
 
-block = lambda : bitset(blocksize, 0)  # Stores messages
-keyblock = lambda : bitset(keysize, 0)  # Stores states
+block = lambda : bitset(blocksize, constant(0))  # Stores messages
+keyblock = lambda : bitset(keysize, constant(0))  # Stores states
 
 
 #
 # LowMC private data members
 #
 
-# The S-box and its inverse (little-endian)
-Sbox = [[0,0,0], [1,0,0], [1,1,0], [0,1,1], [1,1,1], [0,0,1], [1,0,1], [0,1,0]]  # vector<unsigned>
-invSbox = [[0,0,0], [1,0,0], [1,1,1], [0,1,0], [1,0,1], [0,1,1], [1,1,0], [0,0,1]]  # vector<unsigned>
+# 3-bit binary bit arrays (in little-endian)
+bin0 = constants([0,0,0])
+bin1 = constants([1,0,0])
+bin2 = constants([0,1,0])
+bin3 = constants([1,1,0])
+bin4 = constants([0,0,1])
+bin5 = constants([1,0,1])
+bin6 = constants([0,1,1])
+bin7 = constants([1,1,1])
+
+# The S-box and its inverse
+Sbox = [bin0, bin1, bin3, bin6, bin7, bin4, bin5, bin2]  # vector<unsigned>
+invSbox = [bin0, bin1, bin7, bin2, bin5, bin6, bin3, bin4]  # vector<unsigned>
 
 LinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the binary matrices for each round
 invLinMatrices = [[block() for _ in range(blocksize)] for _ in range(rounds)]  # Stores the inverses of LinMatrices
 roundconstants = [block() for _ in range(rounds)]  # Stores the round constants
-key = 0  # Stores the master key
+key = None  # Stores the master key
 KeyMatrices = [[keyblock() for _ in range(blocksize)] for _ in range(rounds+1)]  # Stores the matrices that generate the round keys
 roundkeys = [keyblock() for _ in range(rounds+1)]  # Stores the round keys
 state = None  # Keeps the 80 bit LSFR state
 
-default_key = list(reversed([
+default_key = constants(list(reversed([
     1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
     0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
     0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
     1, 0, 0, 1, 0, 0, 1, 0, 0, 1
-]))
+])))
 key = default_key
 
 #
@@ -96,16 +108,16 @@ def Substitution(message: block):  # -> block
 
     # Get the identity part of the message
     j = 3*numofboxes
-    temp = xor_block(temp, message[j:] + [0 for _ in range(j)])
+    temp = xor_block(temp, message[j:] + constants([0 for _ in range(j)]))
 
     # Get the rest through the S-boxes
     for i in range(numofboxes):
-        temp = [0, 0, 0] + temp[:-3]
+        temp = constants([0, 0, 0]) + temp[:-3]
         j = 3*(numofboxes-i-1)
-        idx_bits = (message[j:] + [0 for _ in range(j)])
+        idx_bits = (message[j:] + constants([0 for _ in range(j)]))
 
         a, b, c = idx_bits[0:3]
-        inv = lambda t : t^1  # safe NOT (instead of using ~) for when testing manually
+        inv = lambda t : t^constant(1)  # safe NOT (instead of using ~) for when testing manually
         eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
         ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
         add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
@@ -113,22 +125,22 @@ def Substitution(message: block):  # -> block
         sb = add(
             *add(
                 *add(
-                    *ife(*Sbox[0], eqt(0,0,0)),
-                    *ife(*Sbox[1], eqt(1,0,0))  # big-endian
+                    *ife(*Sbox[0], eqt(*bin0)),
+                    *ife(*Sbox[1], eqt(*bin1))
                 ),
                 *add(
-                    *ife(*Sbox[2], eqt(0,1,0)),
-                    *ife(*Sbox[3], eqt(1,1,0))
+                    *ife(*Sbox[2], eqt(*bin2)),
+                    *ife(*Sbox[3], eqt(*bin3))
                 )
             ),
             *add(
                 *add(
-                    *ife(*Sbox[4], eqt(0,0,1)),
-                    *ife(*Sbox[5], eqt(1,0,1))
+                    *ife(*Sbox[4], eqt(*bin4)),
+                    *ife(*Sbox[5], eqt(*bin5))
                 ),
                 *add(
-                    *ife(*Sbox[6], eqt(0,1,1)),
-                    *ife(*Sbox[7], eqt(1,1,1))
+                    *ife(*Sbox[6], eqt(*bin6)),
+                    *ife(*Sbox[7], eqt(*bin7))
                 )
             )
         )
@@ -145,16 +157,16 @@ def invSubstitution(message: block):  # -> block
 
     # Get the identity part of the message
     j = 3*numofboxes
-    temp = xor_block(temp, message[j:] + [0 for _ in range(j)])
+    temp = xor_block(temp, message[j:] + constants([0 for _ in range(j)]))
 
-    # Get the rest through the inverted S-boxes
+    # Get the rest through the S-boxes
     for i in range(numofboxes):
-        temp = [0, 0, 0] + temp[:-3]
+        temp = constants([0, 0, 0]) + temp[:-3]
         j = 3*(numofboxes-i-1)
-        idx_bits = (message[j:] + [0 for _ in range(j)])[0:3]
+        idx_bits = (message[j:] + constants([0 for _ in range(j)]))
 
         a, b, c = idx_bits[0:3]
-        inv = lambda t : t^1  # safe NOT (instead of using ~) for when testing manually
+        inv = lambda t : t^constant(1)  # safe NOT (instead of using ~) for when testing manually
         eqt = lambda x,y,z : (inv(a^x)) & (inv(b^y)) & (inv(c^z))
         ife = lambda x,y,z,cmp : [x&cmp, y&cmp, z&cmp]
         add = lambda x,y,z,u,v,w : [x^u, y^v, z^w]
@@ -162,22 +174,22 @@ def invSubstitution(message: block):  # -> block
         sb = add(
             *add(
                 *add(
-                    *ife(*invSbox[0], eqt(0,0,0)),
-                    *ife(*invSbox[1], eqt(1,0,0))  # big-endian
+                    *ife(*invSbox[0], eqt(*bin0)),
+                    *ife(*invSbox[1], eqt(*bin1))
                 ),
                 *add(
-                    *ife(*invSbox[2], eqt(0,1,0)),
-                    *ife(*invSbox[3], eqt(1,1,0))
+                    *ife(*invSbox[2], eqt(*bin2)),
+                    *ife(*invSbox[3], eqt(*bin3))
                 )
             ),
             *add(
                 *add(
-                    *ife(*invSbox[4], eqt(0,0,1)),
-                    *ife(*invSbox[5], eqt(1,0,1))
+                    *ife(*invSbox[4], eqt(*bin4)),
+                    *ife(*invSbox[5], eqt(*bin5))
                 ),
                 *add(
-                    *ife(*invSbox[6], eqt(0,1,1)),
-                    *ife(*invSbox[7], eqt(1,1,1))
+                    *ife(*invSbox[6], eqt(*bin6)),
+                    *ife(*invSbox[7], eqt(*bin7))
                 )
             )
         )
@@ -192,7 +204,7 @@ def invSubstitution(message: block):  # -> block
 def MultiplyWithGF2Matrix(matrix, message):  # -> block
     temp = block()
     for i in range(blocksize):
-        temp[i] = 0
+        temp[i] = constant(0)
         for mb, b in zip(message, matrix[i]):
             temp[i] = temp[i] ^ (mb & b)
     return temp
@@ -201,7 +213,7 @@ def MultiplyWithGF2Matrix(matrix, message):  # -> block
 def MultiplyWithGF2Matrix_Key(matrix, k):  # -> block
     temp = block()
     for i in range(blocksize):
-        temp[i] = 0
+        temp[i] = constant(0)
         for kb, b in zip(k, matrix[i]):
             temp[i] = temp[i] ^ (kb & b)
     return temp
@@ -353,7 +365,7 @@ def invert_Matrix(matrix):  # -> vector<block>
     # Initialize to hold the inverted matrix
     invmat = [block() for _ in range(blocksize)]
     for i in range(blocksize):
-        invmat[i][i] = 1
+        invmat[i][i] = constant(1)
 
     size = len(mat[0])
 
@@ -410,17 +422,17 @@ def getrandkeyblock():  # -> keyblock
 # The first 160 bits are thrown away
 def getrandbit():  # -> bool
     global state
-    tmp = 0
+    tmp = constant(0)
 
     # If state has not been initialized yet
     if state is None:
-        state = bitset(80, 1)  # Initialize with all bits set
+        state = bitset(80, constant(1))  # Initialize with all bits set
 
         # Throw the first 160 bits away
         for _ in range(160):
             # Update the state
             tmp = state[0] ^ state[13] ^ state[23] ^ state[38] ^ state[51] ^ state[62]
-            state = state[1:] + [0]
+            state = state[1:] + constants([0])
             state[79] = tmp
 
     # Choice records whether the first bit is 1 or 0.
@@ -428,11 +440,11 @@ def getrandbit():  # -> bool
     while True:
         # Update the state
         tmp = state[0] ^ state[13] ^ state[23] ^ state[38] ^ state[51] ^ state[62]
-        state = state[1:] + [0]
+        state = state[1:] + constants([0])
         state[79] = tmp
         choice = tmp
         tmp = state[0] ^ state[13] ^ state[23] ^ state[38] ^ state[51] ^ state[62]
-        state = state[1:] + [0]
+        state = state[1:] + constants([0])
         state[79] = tmp
 
         if choice:
@@ -450,7 +462,7 @@ keyschedule()
 #
 
 if __name__ == '__main__':
-    pt = list(reversed([
+    pt = constants(list(reversed([
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -459,7 +471,7 @@ if __name__ == '__main__':
         0, 1, 1, 0, 0, 1, 1, 0,
         1, 1, 0, 1, 1, 0, 1, 0,
         0, 1, 0, 0, 1, 0, 0, 1
-    ]))
+    ])))
 
     print("Plaintext:")
     print(''.join(map(str, reversed(pt))))
