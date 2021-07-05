@@ -1,14 +1,8 @@
 from functools import reduce
-
 from circuit import *
 from circuitry import *
 from secrets import randbits
 from LowMC import init_encrypt, xor_block
-
-
-
-
-
 
 
 #
@@ -150,19 +144,9 @@ def mpc_emulate(circ, n):
         chosen_views = reduce(lambda v, sl: v.extend(sl) or v, [all_views[1::n],all_views[2::n]])
 
         output = list(map(reconstruct_n, RAM[-circ.wire_out_count:]))
-        o = ~(in_bits[0]|~in_bits[0])
+        o = ~(in_bits[0]|~in_bits[0])  # hack to prevent optimize the output while testing natively
         proof = [o^b for b in reduce(lambda v, sl: v.extend(sl) or v, chosen_views) + chosen_indices]
         print(proof_size, len(proof))
         return bits(output + proof)
-
-    # def emulate(in_bits: bits(128)) -> bits(128):
-    #     encrypt = init_encrypt(constant, constants)
-    #
-    #     c1 = encrypt(in_bits)
-    #     # for _ in range(4-1):
-    #     #     c1 = xor_block(c1, encrypt(c1))
-    #     print(list(map(lambda t : t.value, c1)))
-    #     return c1
-
 
     return emulate
